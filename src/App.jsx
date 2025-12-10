@@ -1,35 +1,550 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import React, { useState, useEffect, useRef } from 'react';
+import html2canvas from 'html2canvas'; 
+import { 
+    ChevronLeft, ChevronRight, Target, CheckSquare, Image as ImageIcon, 
+    Share2, Save, X, Trash2, Plus, Link as LinkIcon, Loader2, 
+    CheckCircle2, Sparkles, Lock, Ghost, CalendarDays, ScrollText,
+    Trophy, Quote, PenLine, AlertTriangle, Copy, Download, Heart, User, Calendar, Settings
+} from 'lucide-react';
 
-function App() {
-  const [count, setCount] = useState(0)
+// --- Firebase 导入 ---
+import { initializeApp } from "firebase/app";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getFirestore, collection, doc, setDoc, onSnapshot } from "firebase/firestore";
 
-  return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+// =========================================================================
+// ★★★ 请在此处替换为你自己的 Firebase 配置 ★★★
+// =========================================================================
+const firebaseConfig = {
+  apiKey: "AIzaSyCz9vwlM0qF_qzmpsZADYkQX46v6KvhEFA",
+  authDomain: "decalife-587b2.firebaseapp.com",
+  projectId: "decalife-587b2",
+  storageBucket: "decalife-587b2.firebasestorage.app",
+  messagingSenderId: "863325275588",
+  appId: "1:863325275588:web:45be487a0328c033e39091",
+  measurementId: "G-8QYWKZWDSH"
+};
+
+// 检查配置是否已经替换
+const isConfigConfigured = !firebaseConfig.apiKey.includes("你的_API_KEY");
+
+// --- Firebase 初始化 ---
+let app, auth, db;
+if (isConfigConfigured) {
+    try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+    } catch (e) {
+        console.error("Firebase init failed:", e);
+    }
 }
 
-export default App
+// --- 文案库 ---
+const MOTIVATIONAL_QUOTES = [
+    "向内探索，去见证本自具足的自己。🧘",
+    "无需向外索求，答案多在内心深处。🌊",
+    "不是为了抵达某处，而是为了感受行走的意义。🚶",
+    "安静地从泥土中汲取养分，按自己的节奏开花。🌼",
+    "所谓自由，不过是拥有被讨厌的勇气和独立的灵魂。🦅",
+    "在这个快时代，做个慢行者，细嗅蔷薇。🌹",
+    "记录不是为了怀念，而是为了更清醒地活在当下。👁️",
+    "生长是无声的，但自有力量。🌲",
+    "独处时见自己，记录时见天地。📖"
+];
+
+// --- 工具函数 ---
+const formatDate = (date) => `${date.getMonth() + 1}.${date.getDate()}`;
+
+const compressImage = (file) => {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 800;
+                const scaleSize = MAX_WIDTH / img.width;
+                canvas.width = scaleSize < 1 ? MAX_WIDTH : img.width;
+                canvas.height = scaleSize < 1 ? img.height * scaleSize : img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', 0.6));
+            };
+        };
+    });
+};
+
+const generateBlocks = (year) => {
+    const blocks = [];
+    let currentDate = new Date(year, 0, 1);
+    for (let i = 0; i < 36; i++) {
+        const start = new Date(currentDate);
+        const end = new Date(currentDate);
+        end.setDate(end.getDate() + 9);
+        blocks.push({
+            id: `${year}-block-${i + 1}`,
+            index: i + 1,
+            startDate: start,
+            endDate: end,
+        });
+        currentDate.setDate(currentDate.getDate() + 10);
+    }
+    const lastBlockStart = new Date(currentDate);
+    const lastBlockEnd = new Date(year, 11, 31);
+    blocks.push({
+        id: `${year}-block-37`,
+        index: 37,
+        startDate: lastBlockStart,
+        endDate: lastBlockEnd,
+    });
+    return blocks;
+};
+
+const getBlockStatus = (block) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const start = new Date(block.startDate.getFullYear(), block.startDate.getMonth(), block.startDate.getDate());
+    const end = new Date(block.endDate.getFullYear(), block.endDate.getMonth(), block.endDate.getDate());
+    if (today > end) return 'past';
+    if (today >= start && today <= end) return 'current';
+    return 'future';
+};
+
+const calculateProgress = (todos) => {
+    if (!todos || todos.length === 0) return 0;
+    const completed = todos.filter(t => t.done).length;
+    return Math.round((completed / todos.length) * 100);
+};
+
+// --- UI 组件 ---
+
+const SetupGuide = () => (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans">
+        <div className="bg-white max-w-2xl w-full rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-6 text-white flex items-center gap-4">
+                <div className="p-3 bg-white/20 rounded-xl">
+                    <AlertTriangle size={32} />
+                </div>
+                <div>
+                    <h2 className="text-xl font-bold">应用尚未配置完成</h2>
+                    <p className="text-amber-100 text-sm mt-1">检测到 Firebase API Key 为空或无效</p>
+                </div>
+            </div>
+            <div className="p-8 space-y-6">
+                <p className="text-gray-600">为了让应用能云端保存你的数据，你需要连接到你自己的 Firebase 数据库。</p>
+                <div className="space-y-4">
+                    <div className="flex gap-4">
+                        <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-500">1</div>
+                        <div>
+                            <h3 className="font-bold text-gray-900">获取配置</h3>
+                            <p className="text-sm text-gray-500 mt-1">登录 Firebase 控制台，创建项目，进入项目设置 -> 常规 -> 您的应用。</p>
+                        </div>
+                    </div>
+                    <div className="flex gap-4">
+                        <div className="flex-shrink-0 w-8 h-8 bg-gray-100 rounded-full flex items-center justify-center font-bold text-gray-500">2</div>
+                        <div>
+                            <h3 className="font-bold text-gray-900">修改代码</h3>
+                            <p className="text-sm text-gray-500 mt-1">在 src/App.jsx 第 19 行左右，填入你的 API Key。</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+);
+
+const Toast = ({ message, onClose }) => {
+    useEffect(() => {
+        const timer = setTimeout(onClose, 3000);
+        return () => clearTimeout(timer);
+    }, [onClose]);
+    return (
+        <div className="fixed top-24 left-1/2 transform -translate-x-1/2 z-[100] animate-in slide-in-from-top-5 fade-in duration-300 pointer-events-none">
+            <div className="bg-gray-900/90 backdrop-blur-md text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 min-w-max border border-white/10">
+                <Sparkles size={18} className="text-yellow-400 animate-pulse" />
+                <span className="font-medium text-sm tracking-wide">{message}</span>
+            </div>
+        </div>
+    );
+};
+
+const ProgressRing = ({ radius, stroke, progress, color = "text-green-500" }) => {
+    const normalizedRadius = radius - stroke * 2;
+    const circumference = normalizedRadius * 2 * Math.PI;
+    const strokeDashoffset = circumference - (progress / 100) * circumference;
+    return (
+        <div className="relative flex items-center justify-center">
+            <svg height={radius * 2} width={radius * 2} className="rotate-[-90deg]">
+                <circle stroke="currentColor" fill="transparent" strokeWidth={stroke} strokeDasharray={circumference + ' ' + circumference} style={{ strokeDashoffset }} r={normalizedRadius} cx={radius} cy={radius} className={`${color} transition-all duration-500 ease-out`} strokeLinecap="round" />
+                <circle stroke="currentColor" fill="transparent" strokeWidth={stroke} r={normalizedRadius} cx={radius} cy={radius} className="text-gray-100 opacity-20" />
+            </svg>
+        </div>
+    );
+};
+
+const BrandLogo = ({ size = 24, className = "" }) => (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" className={className}>
+        <rect x="2" y="2" width="9" height="9" rx="2.5" fill="currentColor" fillOpacity="0.3" />
+        <rect x="13" y="2" width="9" height="9" rx="2.5" fill="currentColor" fillOpacity="0.5" />
+        <rect x="2" y="13" width="9" height="9" rx="2.5" fill="currentColor" fillOpacity="0.7" />
+        <rect x="13" y="13" width="9" height="9" rx="2.5" fill="currentColor" fillOpacity="1" />
+    </svg>
+);
+
+const BackgroundPattern = () => (
+    <div className="fixed inset-0 z-[-1] overflow-hidden pointer-events-none select-none">
+        <div className="absolute inset-0 bg-[#FAFAF9]" />
+        <div className="absolute top-0 right-0 p-10 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#000 1px, transparent 1px)', backgroundSize: '20px 20px', width: '300px', height: '300px' }}></div>
+        <div className="absolute bottom-0 left-0 p-10 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(#4F46E5 1px, transparent 1px)', backgroundSize: '24px 24px', width: '400px', height: '400px' }}></div>
+        <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-purple-100/60 rounded-full blur-[100px] mix-blend-multiply" />
+        <div className="absolute bottom-[-10%] left-[-10%] w-[600px] h-[600px] bg-amber-50/80 rounded-full blur-[120px] mix-blend-multiply" />
+        <div className="absolute top-[30%] left-[20%] w-[300px] h-[300px] bg-pink-100/40 rounded-full blur-[80px] mix-blend-multiply" />
+    </div>
+);
+
+const StatsModal = ({ blocks, dataStore, onClose }) => {
+    const filledCount = blocks.filter(b => {
+        const data = dataStore[b.id];
+        return !!data && (!!data.theme || !!data.goals || (data.todos && data.todos.length > 0) || !!data.image);
+    }).length;
+    
+    const achievedCount = blocks.filter(b => {
+        const data = dataStore[b.id];
+        return !!data && data.isAchieved;
+    }).length;
+    
+    const total = 37;
+    const passedBlocks = blocks.filter(b => getBlockStatus(b) === 'past').length;
+    const timeProgress = Math.min(100, Math.round(((passedBlocks + 1) / total) * 100));
+    
+    const progressBarChars = 15;
+    const walkerPos = Math.round((timeProgress / 100) * (progressBarChars - 1));
+    let progressBarVisual = [];
+    for (let i = 0; i < progressBarChars; i++) {
+        if (i === walkerPos) progressBarVisual.push("🚶");
+        else if (i < walkerPos) progressBarVisual.push("•");
+        else progressBarVisual.push("·");
+    }
+
+    let comment = "向内生长，扎根于每一个当下。🌱";
+    if (filledCount > 3) comment = "觉察自我，是成长的第一步。🪜";
+    if (filledCount > 10) comment = "你正在重塑生活的秩序，构建内心的城堡。🏰";
+    if (filledCount > 20) comment = "坚持记录，是在纷繁中找回对自己生活的掌控。⚓";
+    if (filledCount > 30) comment = "你已在时间的洪流中，刻画出了独属于你的经纬。🗺️";
+
+    return (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/40 backdrop-blur-md animate-in fade-in duration-300" onClick={onClose}>
+            <div className="bg-[#FFFDF5] w-full max-w-[340px] shadow-2xl relative flex flex-col font-mono text-gray-800 transform rotate-1 transition-transform hover:rotate-0 duration-300" onClick={e => e.stopPropagation()}>
+                <div className="p-8 pt-8 pb-4 flex flex-col items-center text-center">
+                    <div className="mb-6 flex flex-col items-center gap-2">
+                        <BrandLogo size={32} className="text-gray-800" />
+                        <h2 className="text-xl font-black text-gray-900 tracking-wide font-serif">年度拾光小票</h2>
+                    </div>
+                    <div className="w-full mb-8">
+                         <div className="relative w-full h-6 flex items-center justify-between text-gray-400 text-sm">
+                            {progressBarVisual.map((char, index) => (
+                                <span key={index}>{char}</span>
+                            ))}
+                        </div>
+                        <div className="text-center text-[10px] text-gray-400 mt-1 uppercase tracking-widest">{timeProgress}% Loaded</div>
+                    </div>
+                    <div className="w-full space-y-3 mb-8 text-sm">
+                        <div className="flex items-end justify-between"><span className="font-bold text-gray-600">胶囊总数</span><span className="font-bold text-gray-900">{total}</span></div>
+                        <div className="flex items-end justify-between"><span className="font-bold text-gray-600">珍藏回忆</span><span className="font-bold text-indigo-600">{filledCount}</span></div>
+                        <div className="flex items-end justify-between"><span className="font-bold text-gray-600">闪光时刻</span><span className="font-bold text-amber-500">{achievedCount}</span></div>
+                    </div>
+                    <div className="w-full relative py-2 mb-6">
+                        <p className="text-sm text-gray-800 font-serif italic leading-relaxed px-4">“{comment}”</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- 主组件 ---
+function App() {
+    if (!isConfigConfigured) return <SetupGuide />;
+
+    const [user, setUser] = useState(null);
+    const [year, setYear] = useState(new Date().getFullYear());
+    const [blocks, setBlocks] = useState([]);
+    const [selectedBlock, setSelectedBlock] = useState(null);
+    const [dataStore, setDataStore] = useState({});
+    const [isExporting, setIsExporting] = useState(false);
+    const [syncStatus, setSyncStatus] = useState('idle');
+    const [toastMessage, setToastMessage] = useState(null);
+    const [isEditing, setIsEditing] = useState(true);
+    const [showStats, setShowStats] = useState(false);
+    const exportRef = useRef(null);
+    const saveTimeoutRef = useRef(null);
+
+    useEffect(() => {
+        if (auth) {
+            signInAnonymously(auth).catch(console.error);
+            return onAuthStateChanged(auth, setUser);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!user || !db) return;
+        const q = collection(db, 'users', user.uid, 'blocks');
+        return onSnapshot(q, (snapshot) => {
+            const newData = {};
+            snapshot.forEach((doc) => { newData[doc.id] = doc.data(); });
+            setDataStore(prev => ({ ...prev, ...newData }));
+        }, (error) => {
+             if (error.code === 'permission-denied') setToastMessage("权限错误：请检查 Firestore 规则");
+        });
+    }, [user]);
+
+    useEffect(() => { setBlocks(generateBlocks(year)); }, [year]);
+
+    const handleBlockClick = (block) => {
+        setSelectedBlock(block);
+        const data = dataStore[block.id];
+        const hasContent = !!data && (!!data.theme || !!data.goals || (data.todos && data.todos.length > 0) || !!data.image);
+        setIsEditing(!hasContent);
+    };
+
+    const saveData = (blockId, newData, isManual = false) => {
+        const updatedStore = { ...dataStore, [blockId]: newData };
+        setDataStore(updatedStore);
+        setSyncStatus('saving');
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+        const performSave = async () => {
+            if (!user || !db) return;
+            try {
+                const docRef = doc(db, 'users', user.uid, 'blocks', blockId);
+                await setDoc(docRef, newData, { merge: true });
+                setSyncStatus('saved');
+                if (isManual) {
+                    setToastMessage(MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]);
+                    setIsEditing(false);
+                }
+                setTimeout(() => setSyncStatus('idle'), 2000);
+            } catch (err) {
+                console.error("Save failed", err);
+                setSyncStatus('error');
+            }
+        };
+
+        if (isManual) performSave();
+        else saveTimeoutRef.current = setTimeout(performSave, 1000);
+    };
+
+    const handleManualSave = () => { if (selectedBlock && currentBlockData) saveData(selectedBlock.id, currentBlockData, true); };
+
+    const handleImageUpload = async (e, blockId) => {
+        const file = e.target.files[0];
+        if (file) {
+            setSyncStatus('saving');
+            try {
+                const compressedBase64 = await compressImage(file);
+                saveData(blockId, { ...(dataStore[blockId] || {}), image: compressedBase64 });
+            } catch (err) { setSyncStatus('error'); }
+        }
+    };
+
+    const handleExport = async () => {
+        if (!exportRef.current) return;
+        setIsExporting(true);
+        setTimeout(async () => {
+            try {
+                const canvas = await html2canvas(exportRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+                const link = document.createElement('a');
+                link.download = `DecaLife-${selectedBlock.id}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            } catch (err) { alert("导出失败"); } finally { setIsExporting(false); }
+        }, 100);
+    };
+
+    const toggleAchievement = () => {
+        if (selectedBlock && currentBlockData) {
+            const newValue = !currentBlockData.isAchieved;
+            saveData(selectedBlock.id, { ...currentBlockData, isAchieved: newValue });
+            if (newValue) setToastMessage("已标记为达成！太棒了 🌟");
+        }
+    };
+
+    const currentBlockData = selectedBlock ? (dataStore[selectedBlock.id] || { theme: '', goals: '', todos: [], memo: '', image: null, isAchieved: false }) : null;
+
+    return (
+        <div className="min-h-screen font-sans pb-10 relative selection:bg-indigo-100 selection:text-indigo-900">
+            <BackgroundPattern />
+            {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
+            {showStats && <StatsModal blocks={blocks} dataStore={dataStore} onClose={() => setShowStats(false)} />}
+            
+            <header className="sticky top-0 z-20 bg-white/70 backdrop-blur-xl border-b border-white/20 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.02)] px-6 py-4 flex items-center justify-between transition-all">
+                <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 transform transition-transform hover:rotate-6">
+                        <BrandLogo size={20} />
+                    </div>
+                    <div className="flex flex-col">
+                        <h1 className="text-base font-extrabold text-gray-900 leading-none tracking-tight font-serif italic">DecaLife</h1>
+                        <span className="text-[10px] text-gray-500 font-medium mt-0.5 tracking-wide">记录本身，即是抵抗遗忘 🌱</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-3">
+                    <button onClick={() => setShowStats(true)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition-colors relative group" title="年度统计">
+                        <ScrollText size={20} />
+                    </button>
+                    <div className="hidden sm:flex items-center gap-1.5 text-xs font-medium">
+                        {syncStatus === 'saving' && <div className="flex items-center gap-1.5 text-indigo-500 bg-indigo-50 px-2 py-1 rounded-full"><Loader2 size={12} className="animate-spin" /><span>同步中</span></div>}
+                        {syncStatus === 'saved' && <div className="flex items-center gap-1.5 text-green-600 bg-green-50 px-2 py-1 rounded-full"><CheckCircle2 size={12} /><span>已保存</span></div>}
+                        {syncStatus === 'error' && <span className="text-red-500 px-2">保存失败</span>}
+                    </div>
+                    <div className="flex items-center bg-white/60 border border-white/60 backdrop-blur-md rounded-full px-1.5 p-1 shadow-sm hover:shadow-md transition-shadow">
+                        <button onClick={() => setYear(y => y - 1)} className="p-1.5 hover:bg-white rounded-full transition-all text-gray-500 hover:text-gray-900 active:scale-95"><ChevronLeft size={16} /></button>
+                        <span className="mx-3 font-bold text-gray-800 tabular-nums text-sm font-serif">{year}</span>
+                        <button onClick={() => setYear(y => y + 1)} className="p-1.5 hover:bg-white rounded-full transition-all text-gray-500 hover:text-gray-900 active:scale-95"><ChevronRight size={16} /></button>
+                    </div>
+                </div>
+            </header>
+
+            <main className="max-w-xl mx-auto p-6 mt-4">
+                <div className="mb-6">
+                    <div className="flex justify-between items-end mb-5 px-1">
+                        <h2 className="text-xs font-bold text-gray-400 flex items-center gap-2">
+                            <span className="w-2 h-2 bg-indigo-500 rounded-sm rotate-45"></span>
+                            <span className="tracking-[0.1em]">拾光胶囊 · CAPSULES</span>
+                        </h2>
+                        <div className="sm:hidden text-[10px] text-gray-400 font-medium bg-white/50 px-2 py-0.5 rounded-full backdrop-blur-sm">
+                           {syncStatus === 'saving' ? 'Syncing...' : (syncStatus === 'saved' ? 'Synced' : '')}
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-3 sm:gap-4">
+                        {blocks.map(block => {
+                            const status = getBlockStatus(block);
+                            const data = dataStore[block.id];
+                            const hasContent = !!data && ((data.theme && data.theme.trim().length > 0) || (data.goals && data.goals.trim().length > 0) || (data.todos && data.todos.some(t => t.text && t.text.trim().length > 0)) || !!data.image || (data.memo && data.memo.trim().length > 0));
+                            const progress = hasContent && data.todos ? calculateProgress(data.todos) : 0;
+                            const isAchieved = hasContent && data.isAchieved;
+                            let containerClass = "bg-white/70 backdrop-blur-sm border-white/50 hover:bg-white/90 text-gray-600";
+                            let ringColor = "text-indigo-500";
+                            let shadowClass = "shadow-sm hover:shadow-md hover:-translate-y-0.5";
+                            let icon = null;
+
+                            if (status === 'current') {
+                                containerClass = "bg-gradient-to-br from-indigo-500 to-purple-600 text-white ring-4 ring-purple-100 border-transparent transform scale-[1.02] z-10";
+                                ringColor = "text-white";
+                                shadowClass = "shadow-xl shadow-indigo-500/30";
+                            } else if (status === 'past') {
+                                if (hasContent) {
+                                    containerClass = "bg-gradient-to-br from-amber-50 to-orange-100 border-amber-200/60 ring-1 ring-amber-100 text-amber-900";
+                                    shadowClass = "shadow-md hover:shadow-lg";
+                                    icon = isAchieved ? <Sparkles size={16} className="text-amber-500 animate-pulse" /> : <Lock size={16} className="text-amber-400 opacity-60" />;
+                                } else {
+                                    containerClass = "bg-gray-50/20 border-2 border-dashed border-gray-200 text-gray-300 hover:border-gray-300 hover:bg-gray-50 transition-colors";
+                                    shadowClass = "shadow-none";
+                                    icon = <Ghost size={16} className="text-gray-300 opacity-40" />;
+                                }
+                            } else if (status === 'future') {
+                                if (hasContent) {
+                                    containerClass = "bg-blue-50/80 border-blue-200 text-blue-700";
+                                    icon = <CalendarDays size={16} className="text-blue-400 opacity-60" />;
+                                }
+                            }
+
+                            return (
+                                <button key={block.id} onClick={() => handleBlockClick(block)} className={`group relative flex flex-col justify-between p-3 rounded-2xl border transition-all duration-300 ease-out h-24 sm:h-28 ${containerClass} ${shadowClass}`}>
+                                    <div className="flex justify-between items-start w-full">
+                                        <span className={`text-sm font-black tracking-tight font-serif ${status === 'current' ? 'text-white' : 'text-current'} opacity-90`}>{block.index}</span>
+                                        {hasContent && <div className="opacity-90"><ProgressRing radius={9} stroke={2} progress={progress} color={ringColor} /></div>}
+                                    </div>
+                                    <div className="flex flex-col items-start gap-0.5 w-full">
+                                        <span className={`text-[9px] font-bold tracking-wider uppercase opacity-80 ${status === 'current' ? 'text-indigo-100' : 'text-current'}`}>{formatDate(block.startDate)}</span>
+                                        {hasContent && data.theme ? <span className={`text-[10px] font-bold truncate w-full text-left ${status === 'current' ? 'text-white' : 'text-current'} mt-1`}>{data.theme}</span> : (status === 'past' && !hasContent && <span className="text-[9px] italic mt-1 opacity-60">Missed</span>)}
+                                    </div>
+                                    {icon && <div className="absolute bottom-2 right-2">{icon}</div>}
+                                    {status === 'future' && !hasContent && <div className="absolute inset-0 bg-[url('[https://www.transparenttextures.com/patterns/cubes.png](https://www.transparenttextures.com/patterns/cubes.png)')] opacity-[0.05] rounded-2xl" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            </main>
+
+            {selectedBlock && currentBlockData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-gray-900/30 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className={`bg-[#FFFFFE] w-full max-w-lg max-h-[90vh] rounded-[24px] shadow-2xl flex flex-col overflow-hidden ring-1 ring-black/5 relative transition-all duration-300 ${!isEditing ? 'border-t-4 border-indigo-500' : ''}`}>
+                        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between bg-white/80 backdrop-blur-md sticky top-0 z-10">
+                            <div>
+                                <div className="flex items-center gap-2"><h3 className="text-xl font-black text-gray-900 tracking-tight font-serif">第 {selectedBlock.index} 颗 · 拾光胶囊</h3>{!isEditing && <Lock size={14} className="text-indigo-500" />}</div>
+                                <p className="text-xs text-gray-500 font-medium mt-1 tracking-wide">{selectedBlock.startDate.getFullYear()} · {formatDate(selectedBlock.startDate)} - {formatDate(selectedBlock.endDate)}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={handleExport} className="w-10 h-10 flex items-center justify-center bg-gray-50 text-gray-600 rounded-full hover:bg-indigo-50 hover:text-indigo-600 transition-colors" title="生成长图"><Share2 size={18} /></button>
+                                <button onClick={() => setSelectedBlock(null)} className="w-10 h-10 flex items-center justify-center bg-gray-50 text-gray-600 rounded-full hover:bg-gray-100 hover:text-gray-900 transition-colors"><X size={20} /></button>
+                            </div>
+                        </div>
+                        <div ref={exportRef} className="overflow-y-auto p-6 space-y-8 custom-scrollbar pb-24 bg-[#FFFFFE]">
+                            {isEditing ? (
+                                <>
+                                    <div className="group"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><Target size={12} /> 胶囊关键词</label><input type="text" placeholder="给这10天一个关键词..." value={currentBlockData.theme} onChange={(e) => saveData(selectedBlock.id, { ...currentBlockData, theme: e.target.value })} className="w-full text-xl font-bold bg-gray-50/50 hover:bg-gray-50 focus:bg-white border-b-2 border-gray-100 focus:border-indigo-500 rounded-t-lg px-3 py-3 outline-none transition-all placeholder-gray-300 text-gray-800 font-serif" /></div>
+                                    <div className="group"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 block">核心目标 (OKR)</label><textarea rows={3} placeholder="写下这期间最重要的1-3个目标..." value={currentBlockData.goals} onChange={(e) => saveData(selectedBlock.id, { ...currentBlockData, goals: e.target.value })} className="w-full p-4 bg-gray-50 hover:bg-white focus:bg-white rounded-2xl border border-transparent focus:border-indigo-100 focus:ring-4 focus:ring-indigo-50/50 outline-none text-sm resize-none transition-all text-gray-700 leading-relaxed" /></div>
+                                    <div className="group">
+                                        <div className="flex items-center justify-between mb-3"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-1.5"><CheckSquare size={12} /> 关键行动</label></div>
+                                        <div className="space-y-2.5">
+                                            {(currentBlockData.todos || []).map((todo, idx) => (
+                                                <div key={idx} className="flex items-center gap-3 group/item">
+                                                    <button onClick={() => { const newTodos = [...currentBlockData.todos]; newTodos[idx].done = !newTodos[idx].done; saveData(selectedBlock.id, { ...currentBlockData, todos: newTodos }); }} className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all duration-200 ${todo.done ? 'bg-indigo-500 border-indigo-500 shadow-sm shadow-indigo-200' : 'bg-white border-gray-300 hover:border-indigo-400'}`}>{todo.done && <CheckSquare size={12} className="text-white" />}</button>
+                                                    <input type="text" value={todo.text} onChange={(e) => { const newTodos = [...currentBlockData.todos]; newTodos[idx].text = e.target.value; saveData(selectedBlock.id, { ...currentBlockData, todos: newTodos }); }} placeholder="待办事项..." className={`flex-1 bg-transparent outline-none text-sm transition-colors border-b border-transparent focus:border-gray-100 pb-0.5 ${todo.done ? 'text-gray-400 line-through decoration-gray-300' : 'text-gray-700'}`} />
+                                                    <button onClick={() => { const newTodos = currentBlockData.todos.filter((_, i) => i !== idx); saveData(selectedBlock.id, { ...currentBlockData, todos: newTodos }); }} className="text-gray-300 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition-all px-2"><Trash2 size={14} /></button>
+                                                </div>
+                                            ))}
+                                            <button onClick={() => { const newTodos = [...(currentBlockData.todos || []), { text: '', done: false }]; saveData(selectedBlock.id, { ...currentBlockData, todos: newTodos }); }} className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold py-2 px-3 hover:bg-indigo-50 rounded-xl w-fit transition-all mt-2"><Plus size={14} /> 添加事项</button>
+                                        </div>
+                                    </div>
+                                    <div className="group"><label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><LinkIcon size={12} /> 灵感碎片</label><textarea rows={3} placeholder="粘贴教程链接、笔记或灵感..." value={currentBlockData.memo || ''} onChange={(e) => saveData(selectedBlock.id, { ...currentBlockData, memo: e.target.value })} className="w-full p-4 bg-amber-50/50 hover:bg-amber-50 focus:bg-amber-50 rounded-2xl border border-amber-100/50 focus:border-amber-200 focus:ring-4 focus:ring-amber-50 outline-none text-sm resize-none text-gray-700 transition-all" /></div>
+                                    <div className="group">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5"><ImageIcon size={12} /> 精彩瞬间</label>
+                                        <div className="relative">
+                                            {currentBlockData.image ? (
+                                                <div className="relative rounded-2xl overflow-hidden border border-gray-100 shadow-md group/img"><img src={currentBlockData.image} alt="Moment" className="w-full h-56 object-cover transition-transform duration-700 group-hover/img:scale-105" /><button onClick={() => saveData(selectedBlock.id, { ...currentBlockData, image: null })} className="absolute top-3 right-3 bg-black/50 backdrop-blur-md text-white p-1.5 rounded-full hover:bg-red-500 transition-all opacity-0 group-hover/img:opacity-100"><X size={14} /></button></div>
+                                            ) : (
+                                                <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:bg-gray-50 hover:border-indigo-300 transition-all group/upload bg-white">
+                                                    <div className="flex flex-col items-center justify-center pt-5 pb-6 transition-transform group-hover/upload:-translate-y-1"><ImageIcon size={20} className="text-gray-400 group-hover/upload:text-indigo-500 mb-2" /><p className="text-xs text-gray-500 font-medium">点击上传图片</p></div><input type="file" className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, selectedBlock.id)} />
+                                                </label>
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                                    <div>
+                                        <div className="flex justify-between items-start">
+                                            <span className="bg-black text-white px-3 py-1 text-[10px] font-bold rounded-full tracking-wider">THEME</span>
+                                            {currentBlockData.isAchieved && <div className="flex items-center gap-1.5 text-amber-500 bg-amber-50 px-3 py-1 rounded-full border border-amber-100 animate-in zoom-in duration-300"><Trophy size={14} fill="currentColor" /><span className="text-[10px] font-bold tracking-wide">ACHIEVED</span></div>}
+                                        </div>
+                                        <h2 className="text-3xl font-black mt-4 text-gray-900 leading-tight font-serif">{currentBlockData.theme || "未命名时光"}</h2>
+                                    </div>
+                                    {currentBlockData.goals && <div className="bg-gray-50 p-5 rounded-2xl border-l-4 border-indigo-500"><h3 className="text-[10px] font-bold text-gray-400 mb-2 uppercase tracking-wider">Target</h3><p className="text-gray-800 text-sm leading-relaxed whitespace-pre-wrap">{currentBlockData.goals}</p></div>}
+                                    {(currentBlockData.todos || []).length > 0 && <div><h3 className="text-[10px] font-bold text-gray-400 mb-3 uppercase tracking-wider">Checklist Progress</h3><div className="space-y-3">{currentBlockData.todos.map((todo, i) => (<div key={i} className="flex items-start gap-3 opacity-90"><div className={`mt-0.5 w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center border ${todo.done ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>{todo.done && <CheckCircle2 size={12} className="text-white" />}</div><span className={`text-sm ${todo.done ? 'text-gray-500 line-through' : 'text-gray-800'}`}>{todo.text}</span></div>))}</div></div>}
+                                    {currentBlockData.image && <div className="rounded-2xl overflow-hidden shadow-lg transform rotate-1 hover:rotate-0 transition-transform duration-500"><img src={currentBlockData.image} className="w-full h-auto object-cover" alt="Memory" /></div>}
+                                </div>
+                            )}
+                        </div>
+                        <div className="absolute bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-xl border-t border-gray-100 flex items-center justify-center gap-3">
+                            {isEditing ? (
+                                <button onClick={handleManualSave} className="flex-1 w-full bg-gray-900 hover:bg-gray-800 text-white font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-lg shadow-gray-200">{syncStatus === 'saving' ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}<span>确认封存</span></button>
+                            ) : (
+                                <>
+                                    <button onClick={() => setIsEditing(true)} className="flex-1 bg-white hover:bg-gray-50 text-gray-900 border border-gray-200 font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-sm"><PenLine size={18} className="text-gray-500" /><span>重绘记忆</span></button>
+                                    <button onClick={toggleAchievement} className={`flex-1 font-bold py-3 px-6 rounded-xl flex items-center justify-center gap-2 transition-all transform active:scale-95 shadow-md ${currentBlockData.isAchieved ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-gray-900 text-white hover:bg-gray-800'}`}>{currentBlockData.isAchieved ? <CheckCircle2 size={18} /> : <Trophy size={18} />}<span>{currentBlockData.isAchieved ? "已达成" : "标记达成"}</span></button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+export default App;
