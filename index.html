@@ -183,23 +183,21 @@
             return Math.round((completed / todos.length) * 100);
         };
 
-        // --- 新增：欢迎弹窗组件 (支持年份动态与季节性文案) ---
+        // --- 欢迎弹窗组件 ---
         const WelcomeModal = ({ onClose }) => {
             const [isVisible, setIsVisible] = useState(false);
             const [content, setContent] = useState(null);
 
             useEffect(() => {
-                // 检查本地存储
                 const hasSeen = localStorage.getItem('has_seen_welcome');
                 if (!hasSeen) {
                     const now = new Date();
                     const year = now.getFullYear();
-                    const month = now.getMonth() + 1; // 1-12
+                    const month = now.getMonth() + 1; 
 
                     let config = {};
 
                     if (month <= 4) {
-                        // 年初 (1-4月)
                         config = {
                             title: `致 ${year} 年的你`,
                             p1: "新年伊始，万物复苏。我们常觉得时间过得太快，快到还没来得及回味，一年就悄悄溜走了。",
@@ -212,7 +210,6 @@
                             quote: "“种一棵树最好的时间是十年前，其次是现在。”"
                         };
                     } else if (month <= 9) {
-                        // 年中 (5-9月)
                         config = {
                             title: `致 ${year} 年中旬的你`,
                             p1: "不知不觉，这一年已过半。生活或许忙碌，或许平淡，但每一步都算数。",
@@ -225,7 +222,6 @@
                             quote: "“路虽远，行则将至；事虽难，做则必成。”"
                         };
                     } else {
-                        // 年末 (10-12月)
                         config = {
                             title: `致 ${year} 年末的你`,
                             p1: "这一年即将走到尾声。回望过去，是否有些许遗憾，或是满满的收获？",
@@ -255,7 +251,6 @@
             return (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center p-6 bg-gray-900/60 backdrop-blur-md animate-fade-in">
                     <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl p-8 relative overflow-hidden flex flex-col items-center text-center">
-                        {/* 装饰背景 */}
                         <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-amber-500"></div>
                         <div className="absolute -top-10 -right-10 w-32 h-32 bg-yellow-100 rounded-full blur-3xl opacity-50"></div>
                         
@@ -278,6 +273,70 @@
                         >
                             <span>开启我的拾光之旅</span>
                             <Icons.ArrowRight size={16} className="group-hover:translate-x-1 transition-transform" />
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- 新增：新手引导组件 ---
+        const OnboardingGuide = ({ onClose }) => {
+            const [step, setStep] = useState(0);
+            
+            const steps = [
+                {
+                    title: "👋 欢迎来到拾光胶囊",
+                    desc: "这是一个关于「时间」的容器。我们将一年拆解为 36 颗胶囊，每颗胶囊承载 10 天的记忆。",
+                    icon: <Icons.Hourglass size={48} className="text-indigo-500" />
+                },
+                {
+                    title: "📍 寻找「当下」",
+                    desc: "系统会自动定位到当前日期的胶囊（高亮显示）。点击它，即可记录你的 OKR、灵感或碎碎念。",
+                    icon: <Icons.Target size={48} className="text-purple-500" />
+                },
+                {
+                    title: "☁️ 永不丢失",
+                    desc: "点击右上角的「登录/注册」，你的记忆将同步至云端。即使换手机，数据也依然在。",
+                    icon: <Icons.LogIn size={48} className="text-amber-500" />
+                },
+                {
+                    title: "📊 见证成长",
+                    desc: "点击右上角的「卷轴」图标，随时查看你的年度填坑进度。祝你填满这一年！",
+                    icon: <Icons.Trophy size={48} className="text-pink-500" />
+                }
+            ];
+
+            const handleNext = () => {
+                if (step < steps.length - 1) {
+                    setStep(s => s + 1);
+                } else {
+                    localStorage.setItem('has_seen_guide', 'true');
+                    onClose();
+                }
+            };
+
+            return (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center p-6 bg-gray-900/80 backdrop-blur-sm animate-fade-in">
+                    <div className="bg-white w-full max-w-sm rounded-[24px] shadow-2xl p-8 relative flex flex-col items-center text-center">
+                        <div className="mb-6 p-4 rounded-full bg-gray-50 animate-bounce-slow">
+                            {steps[step].icon}
+                        </div>
+                        
+                        <h3 className="text-xl font-bold text-gray-900 mb-3">{steps[step].title}</h3>
+                        <p className="text-sm text-gray-500 leading-relaxed mb-8 h-12">{steps[step].desc}</p>
+                        
+                        {/* 进度指示器 */}
+                        <div className="flex gap-2 mb-6">
+                            {steps.map((_, i) => (
+                                <div key={i} className={`h-1.5 rounded-full transition-all duration-300 ${i === step ? 'w-6 bg-indigo-600' : 'w-1.5 bg-gray-200'}`}></div>
+                            ))}
+                        </div>
+
+                        <button 
+                            onClick={handleNext}
+                            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-all shadow-md active:scale-95"
+                        >
+                            {step === steps.length - 1 ? "开始体验" : "下一步"}
                         </button>
                     </div>
                 </div>
@@ -407,6 +466,7 @@
             const [isEditing, setIsEditing] = useState(true);
             const [showStats, setShowStats] = useState(false);
             const [showLoginModal, setShowLoginModal] = useState(false);
+            const [showGuide, setShowGuide] = useState(false); // 新增：控制新手引导显示
             const [hasAutoScrolled, setHasAutoScrolled] = useState(false);
 
             const exportRef = useRef(null);
@@ -429,6 +489,13 @@
                         }
                     });
                     return () => unsubscribe();
+                }
+            }, []);
+
+            // 检查新手引导状态（如果已看过欢迎信，但没看过引导，则显示引导）
+            useEffect(() => {
+                if (localStorage.getItem('has_seen_welcome') === 'true' && !localStorage.getItem('has_seen_guide')) {
+                    setShowGuide(true);
                 }
             }, []);
 
@@ -601,7 +668,10 @@
                 <div className="min-h-screen font-sans pb-10 relative selection:bg-indigo-100 selection:text-indigo-900">
                     <BackgroundPattern />
                     {/* Welcome Modal 组件 */}
-                    <WelcomeModal onClose={() => console.log('Welcome closed')} />
+                    <WelcomeModal onClose={() => setShowGuide(true)} />
+                    
+                    {/* 新手引导组件 */}
+                    {showGuide && <OnboardingGuide onClose={() => setShowGuide(false)} />}
                     
                     {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
                     {showStats && <StatsModal blocks={blocks} dataStore={dataStore} onClose={() => setShowStats(false)} />}
