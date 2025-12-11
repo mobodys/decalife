@@ -1,15 +1,460 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>DecaLife - 拾光胶囊</title>
-    <!-- 引入 Noto Serif SC 字体 -->
-    <link href="[https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap](https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&display=swap)" rel="stylesheet">
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+    <!-- 引入 Tailwind CSS (样式库) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 引入 Font Awesome (图标库) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- 引入 html2canvas (截图功能核心，修复Bug用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- 引入 Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&family=Lato:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Lato', 'Noto Serif SC', serif; background-color: #f3f4f6; }
+        .capsule-card { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
+        .capsule-card:active { transform: scale(0.98); }
+        /* 隐藏滚动条但允许滚动 */
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .glass-effect { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen relative">
+
+    <!-- 顶部导航 -->
+    <nav class="sticky top-0 z-50 glass-effect border-b border-gray-200 px-4 py-3 flex justify-between items-center shadow-sm">
+        <div class="flex items-center gap-2">
+            <i class="fa-solid fa-hourglass-half text-indigo-600"></i>
+            <span class="font-bold text-lg tracking-wider text-gray-800">DecaLife</span>
+        </div>
+        <div class="flex gap-3">
+             <!-- 登录状态显示 -->
+            <div id="user-status" class="text-sm text-gray-600 flex items-center gap-2">
+                <span id="user-email" class="hidden md:inline">未登录</span>
+                <button id="auth-btn" onclick="toggleAuthModal()" class="text-indigo-600 font-bold hover:underline">
+                    登录/注册
+                </button>
+                 <button id="logout-btn" onclick="handleLogout()" class="hidden text-red-500 font-bold hover:underline ml-2">
+                    退出
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- 主容器 -->
+    <main id="timeline-container" class="max-w-md mx-auto p-4 pb-24 space-y-6">
+        <!-- JS将在这里生成胶囊列表 -->
+    </main>
+
+    <!-- 登录/注册 模态框 (解决通用性登录问题) -->
+    <div id="auth-modal" class="fixed inset-0 z-[60] bg-black bg-opacity-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl transform transition-all">
+            <h2 class="text-xl font-bold mb-4 text-center">账号同步</h2>
+            <p class="text-xs text-gray-500 mb-4 text-center">使用邮箱密码登录，即可在不同设备间同步数据。</p>
+            
+            <input type="email" id="email-input" placeholder="邮箱地址" class="w-full p-3 mb-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <input type="password" id="password-input" placeholder="密码 (至少6位)" class="w-full p-3 mb-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            
+            <button onclick="handleLogin()" class="w-full bg-indigo-600 text-white p-3 rounded-lg font-bold hover:bg-indigo-700 transition mb-2">登录</button>
+            <button onclick="handleRegister()" class="w-full bg-white text-indigo-600 border border-indigo-600 p-3 rounded-lg font-bold hover:bg-indigo-50 transition">注册新账号</button>
+            
+            <button onclick="toggleAuthModal()" class="mt-4 text-gray-400 text-sm w-full text-center hover:text-gray-600">暂不登录 (数据保存在本地)</button>
+        </div>
+    </div>
+
+    <!-- 编辑/查看 模态框 -->
+    <div id="edit-modal" class="fixed inset-0 z-[60] bg-black bg-opacity-50 hidden flex items-end sm:items-center justify-center transition-opacity duration-300">
+        <div class="bg-white w-full max-w-lg sm:rounded-2xl rounded-t-2xl h-[90vh] sm:h-auto flex flex-col shadow-2xl transform transition-transform duration-300 translate-y-full sm:translate-y-0" id="modal-content">
+            
+            <!-- 模态框头部 -->
+            <div class="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 rounded-t-2xl">
+                <div>
+                    <h2 id="modal-title" class="text-xl font-serif font-bold text-gray-800">第 X 颗 · 拾光胶囊</h2>
+                    <p id="modal-date" class="text-xs text-gray-500 mt-1">2024.1.1 - 1.10</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="generateShareImage()" class="p-2 rounded-full hover:bg-indigo-100 text-indigo-600 transition" title="生成图片分享">
+                        <i class="fa-solid fa-share-nodes"></i>
+                    </button>
+                    <button onclick="closeModal()" class="p-2 rounded-full hover:bg-gray-200 text-gray-500 transition">
+                        <i class="fa-solid fa-times text-lg"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 截图区域容器 (我们将对此区域进行截图) -->
+            <div id="capture-area" class="flex-1 overflow-y-auto p-5 bg-white">
+                <!-- 关键词 -->
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                        <i class="fa-solid fa-bullseye mr-1"></i> 胶囊关键词
+                    </label>
+                    <input type="text" id="modal-keyword" class="w-full text-2xl font-serif text-gray-800 border-b-2 border-dashed border-gray-200 focus:border-indigo-500 focus:outline-none py-2 bg-transparent placeholder-gray-300" placeholder="给这10天一个关键词...">
+                </div>
+
+                <!-- 核心记录 -->
+                <div class="mb-6">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                        <i class="fa-solid fa-feather mr-1"></i> 核心记录 (3/3)
+                    </label>
+                    <div class="space-y-3">
+                        <textarea class="item-input w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-100 text-gray-700 resize-none" rows="2" placeholder="1. 发生了什么重要的小事？"></textarea>
+                        <textarea class="item-input w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-100 text-gray-700 resize-none" rows="2" placeholder="2. 有什么新的感悟？"></textarea>
+                        <textarea class="item-input w-full p-3 bg-gray-50 rounded-xl border-none focus:ring-2 focus:ring-indigo-100 text-gray-700 resize-none" rows="2" placeholder="3. 值得铭记的瞬间？"></textarea>
+                    </div>
+                </div>
+
+                <!-- 灵感碎片 -->
+                <div class="mb-2">
+                    <label class="block text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                        <i class="fa-solid fa-link mr-1"></i> 灵感碎片
+                    </label>
+                    <textarea id="modal-notes" class="w-full p-4 bg-yellow-50 rounded-xl border-none text-gray-600 focus:ring-2 focus:ring-yellow-200 h-24 resize-none" placeholder="粘贴教程链接、笔记或灵感..."></textarea>
+                </div>
+                
+                <!-- 水印 (仅截图时可见，平时可以设为透明或很淡) -->
+                <div class="mt-4 text-center opacity-0" id="watermark">
+                    <span class="text-xs text-gray-300 font-serif">DecaLife · 拾光胶囊</span>
+                </div>
+            </div>
+
+            <!-- 底部按钮 -->
+            <div class="p-4 border-t border-gray-100 bg-white sm:rounded-b-2xl">
+                <button onclick="saveCurrentCapsule()" class="w-full bg-gray-900 text-white py-3 rounded-xl font-bold hover:bg-gray-800 transition shadow-lg flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-floppy-disk"></i> 确认封存
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // ---------------- Firebase 配置与逻辑 ----------------
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        // ★★★ 这里就是您刚刚修改的部分 ★★★
+        const firebaseConfig = {
+            apiKey: "AIzaSyCz9vwlM0qF_qzmpsZADYkQX46v6KvhEFA",
+            authDomain: "decalife-587b2.firebaseapp.com",
+            projectId: "decalife-587b2",
+            storageBucket: "decalife-587b2.firebasestorage.app",
+            messagingSenderId: "863325275588",
+            appId: "1:863325275588:web:45be487a0328c033e39091",
+            measurementId: "G-8QYWKZWDSH"
+        };
+
+        // 初始化 Firebase (加 try-catch 防止未配置时报错)
+        let app, db, auth;
+        // ... 后面的代码保持不变 ...
+        try {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+            console.error("Firebase 初始化失败，请检查配置:", e);
+        }
+
+        let currentUser = null;
+        let userData = {}; // 本地数据缓存
+
+        // 监听登录状态
+        if(auth) {
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('user-email').innerText = user.email.split('@')[0];
+                    document.getElementById('auth-btn').classList.add('hidden');
+                    document.getElementById('logout-btn').classList.remove('hidden');
+                    document.getElementById('auth-modal').classList.add('hidden');
+                    loadUserData(); // 登录后加载云端数据
+                } else {
+                    currentUser = null;
+                    document.getElementById('user-email').innerText = "未登录";
+                    document.getElementById('auth-btn').classList.remove('hidden');
+                    document.getElementById('logout-btn').classList.add('hidden');
+                    // 未登录时尝试读取本地 localStorage 数据作为后备
+                    const localData = localStorage.getItem('decalife_data');
+                    if(localData) {
+                        userData = JSON.parse(localData);
+                        renderTimeline();
+                    }
+                }
+            });
+        }
+
+        // 暴露给全局 Window 对象以便 HTML onclick 调用
+        window.handleRegister = async () => {
+            const email = document.getElementById('email-input').value;
+            const pass = document.getElementById('password-input').value;
+            if(!email || !pass) return alert("请输入邮箱和密码");
+            try {
+                await createUserWithEmailAndPassword(auth, email, pass);
+                alert("注册成功！");
+            } catch (error) {
+                alert("注册失败: " + error.message);
+            }
+        }
+
+        window.handleLogin = async () => {
+            const email = document.getElementById('email-input').value;
+            const pass = document.getElementById('password-input').value;
+            if(!email || !pass) return alert("请输入邮箱和密码");
+            try {
+                await signInWithEmailAndPassword(auth, email, pass);
+            } catch (error) {
+                alert("登录失败: " + error.message);
+            }
+        }
+
+        window.handleLogout = () => {
+            signOut(auth);
+            location.reload();
+        }
+
+        window.saveDataToCloud = async (capsuleId, data) => {
+            if (!currentUser) {
+                // 未登录：存本地
+                userData[capsuleId] = data;
+                localStorage.setItem('decalife_data', JSON.stringify(userData));
+                return;
+            }
+            // 已登录：存 Firestore
+            // 路径: users/{userId}/capsules/{capsuleId}
+            try {
+                const userRef = doc(db, "users", currentUser.uid);
+                // 简单起见，我们把所有数据存在一个大文档里，或者分文档存均可。
+                // 这里为了方便，我们直接更新本地缓存对象，然后整个存入一个字段，或者使用子集合。
+                // 推荐：使用 setDoc merge
+                await setDoc(doc(db, "users", currentUser.uid, "data", "capsules"), {
+                    [capsuleId]: data
+                }, { merge: true });
+                console.log("云端保存成功");
+            } catch (e) {
+                console.error("保存失败", e);
+                alert("保存失败，请检查网络");
+            }
+        }
+
+        async function loadUserData() {
+            if(!currentUser) return;
+            const docRef = doc(db, "users", currentUser.uid, "data", "capsules");
+            // 开启实时监听
+            onSnapshot(docRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    userData = docSnap.data();
+                    renderTimeline(); // 数据更新时重绘界面
+                } else {
+                    console.log("暂无数据");
+                    renderTimeline();
+                }
+            });
+        }
+
+        // ---------------- 应用核心逻辑 ----------------
+        
+        // 配置：起始日期 (假设从 2025-01-01 开始，您可以修改这个日期)
+        const START_DATE = new Date('2025-01-01'); 
+        const TOTAL_CAPSULES = 36; // 一年约36颗
+        let currentCapsuleIndex = -1; // 当前编辑的索引
+
+        // 初始化
+        window.onload = () => {
+            renderTimeline();
+            // 延迟一点时间执行自动滚动，确保DOM渲染完毕
+            setTimeout(scrollToCurrentCapsule, 500); 
+        };
+
+        // 渲染时间轴
+        function renderTimeline() {
+            const container = document.getElementById('timeline-container');
+            container.innerHTML = ''; // 清空
+
+            const today = new Date();
+            let activeFound = false;
+
+            for (let i = 0; i < TOTAL_CAPSULES; i++) {
+                const capStart = new Date(START_DATE);
+                capStart.setDate(START_DATE.getDate() + (i * 10));
+                
+                const capEnd = new Date(capStart);
+                capEnd.setDate(capStart.getDate() + 9);
+
+                // 判断状态
+                let status = 'future'; // 默认未来
+                if (today >= capStart && today <= capEnd) status = 'active'; // 正在进行
+                else if (today > capEnd) status = 'past'; // 过去
+
+                // 获取该胶囊的数据
+                const data = userData[i] || {};
+                const hasContent = data.keyword || (data.items && data.items[0]);
+
+                // 构建卡片 HTML
+                const card = document.createElement('div');
+                card.id = `capsule-${i}`; // ★ 用于自动滚动的 ID
+                card.className = `capsule-card p-5 rounded-2xl border-2 cursor-pointer relative overflow-hidden ${getStatusClasses(status, hasContent)}`;
+                card.onclick = () => openModal(i, capStart, capEnd);
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start mb-2 relative z-10">
+                        <div>
+                            <div class="text-xs font-bold uppercase tracking-wider opacity-60">NO.${i + 1}</div>
+                            <div class="font-serif text-lg font-bold mt-1">${formatDate(capStart)} - ${formatDate(capEnd)}</div>
+                        </div>
+                        <div class="text-2xl opacity-80">${getStatusIcon(status, hasContent)}</div>
+                    </div>
+                    <div class="mt-4 relative z-10">
+                        ${data.keyword ? `<div class="text-xl font-bold font-serif mb-1">“${data.keyword}”</div>` : '<div class="h-8"></div>'}
+                        <div class="text-sm opacity-60 truncate">${data.items ? data.items[0] || '点击记录这10天...' : '点击记录这10天...'}</div>
+                    </div>
+                    <!-- 装饰背景 -->
+                    <div class="absolute -bottom-4 -right-4 text-9xl opacity-5 pointer-events-none rotate-12">
+                        ${i + 1}
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+        }
+
+        // ★★★ 解决方案 2：自动滚动到当前日期 ★★★
+        function scrollToCurrentCapsule() {
+            const today = new Date();
+            // 计算当前是第几个10天
+            const diffTime = Math.abs(today - START_DATE);
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            let targetIndex = Math.floor(diffDays / 10);
+            
+            // 边界检查
+            if (targetIndex < 0) targetIndex = 0;
+            if (targetIndex >= TOTAL_CAPSULES) targetIndex = TOTAL_CAPSULES - 1;
+
+            const el = document.getElementById(`capsule-${targetIndex}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                // 给当前胶囊加个高亮边框提示一下
+                el.classList.add('ring-4', 'ring-indigo-300', 'ring-opacity-50');
+                setTimeout(() => el.classList.remove('ring-4', 'ring-indigo-300', 'ring-opacity-50'), 2000);
+            }
+        }
+
+        // 样式辅助函数
+        function getStatusClasses(status, hasContent) {
+            if (status === 'active') return 'bg-white border-indigo-500 shadow-xl ring-1 ring-indigo-500';
+            if (hasContent) return 'bg-white border-gray-200 shadow-sm text-gray-800';
+            if (status === 'past') return 'bg-gray-200 border-transparent text-gray-400 grayscale';
+            return 'bg-gray-50 border-dashed border-gray-300 text-gray-400';
+        }
+
+        function getStatusIcon(status, hasContent) {
+            if (status === 'active') return '<i class="fa-solid fa-pen-nib animate-bounce"></i>';
+            if (hasContent) return '<i class="fa-solid fa-check-circle text-green-500"></i>';
+            if (status === 'past') return '<i class="fa-solid fa-lock"></i>';
+            return '<i class="fa-regular fa-circle"></i>';
+        }
+
+        function formatDate(date) {
+            return `${date.getMonth() + 1}.${date.getDate()}`;
+        }
+
+        // ---------------- 模态框逻辑 ----------------
+        window.toggleAuthModal = () => {
+            const modal = document.getElementById('auth-modal');
+            modal.classList.toggle('hidden');
+        }
+
+        window.openModal = (index, start, end) => {
+            currentCapsuleIndex = index;
+            const modal = document.getElementById('edit-modal');
+            const content = document.getElementById('modal-content');
+            
+            // 填充日期
+            document.getElementById('modal-title').innerText = `第 ${index + 1} 颗 · 拾光胶囊`;
+            document.getElementById('modal-date').innerText = `${formatDate(start)} - ${formatDate(end)}`;
+            
+            // 填充数据
+            const data = userData[index] || {};
+            document.getElementById('modal-keyword').value = data.keyword || '';
+            document.getElementById('modal-notes').value = data.notes || '';
+            
+            const inputs = document.querySelectorAll('.item-input');
+            inputs.forEach((input, i) => {
+                input.value = (data.items && data.items[i]) ? data.items[i] : '';
+            });
+
+            // 显示动画
+            modal.classList.remove('hidden');
+            setTimeout(() => {
+                content.classList.remove('translate-y-full');
+            }, 10);
+        }
+
+        window.closeModal = () => {
+            const modal = document.getElementById('edit-modal');
+            const content = document.getElementById('modal-content');
+            content.classList.add('translate-y-full');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        window.saveCurrentCapsule = () => {
+            if (currentCapsuleIndex === -1) return;
+
+            const keyword = document.getElementById('modal-keyword').value;
+            const notes = document.getElementById('modal-notes').value;
+            const items = Array.from(document.querySelectorAll('.item-input')).map(input => input.value);
+
+            const data = { keyword, items, notes, lastEdited: new Date().toISOString() };
+
+            // 调用保存函数（自动判断是本地还是云端）
+            window.saveDataToCloud(currentCapsuleIndex, data);
+            
+            // 更新本地视图
+            userData[currentCapsuleIndex] = data; // 乐观更新
+            renderTimeline();
+            closeModal();
+        }
+
+        // ★★★ 解决方案 3：修复截图 Bug 并实现下载 ★★★
+        window.generateShareImage = () => {
+            const element = document.getElementById('capture-area');
+            const watermark = document.getElementById('watermark');
+            
+            // 截图前显示水印
+            watermark.classList.remove('opacity-0');
+            
+            // 确保 html2canvas 已加载
+            if (typeof html2canvas === 'undefined') {
+                alert("组件加载中，请稍后再试...");
+                return;
+            }
+
+            // 执行截图
+            html2canvas(element, {
+                scale: 2, // 提高清晰度
+                backgroundColor: "#ffffff", // 确保背景是白的
+                useCORS: true // 允许跨域图片
+            }).then(canvas => {
+                // 创建下载链接
+                const link = document.createElement('a');
+                link.download = `DecaLife_Capsule_${currentCapsuleIndex + 1}.png`;
+                link.href = canvas.toDataURL("image/png");
+                link.click();
+                
+                // 截图后隐藏水印
+                watermark.classList.add('opacity-0');
+            }).catch(err => {
+                console.error("截图失败:", err);
+                alert("生成图片失败，请重试");
+                watermark.classList.add('opacity-0');
+            });
+        }
+    </script>
+</body>
 </html>
